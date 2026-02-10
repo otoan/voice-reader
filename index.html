@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Voice Reader</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Voice Reader">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 Voice Reader</h1>
+        </header>
+
+        <div class="settings-panel">
+            <div class="setting-group">
+                <label for="speedRange">Speed: <span id="speedValue">1.0x</span></label>
+                <input type="range" id="speedRange" min="0.5" max="2.0" step="0.1" value="1.0">
+            </div>
+            <div class="setting-group">
+                <label for="voiceSelect">Voice:</label>
+                <select id="voiceSelect">
+                    <option value="">-- 音声を選択 --</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="add-article">
+            <input type="text" id="articleUrl" placeholder="Paste article URL here">
+            <button id="addBtn">Add</button>
+        </div>
+
+        <div id="statusMessage" style="text-align: center; font-size: 14px; color: #666;"></div>
+
+        <div id="articleList" class="article-list"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

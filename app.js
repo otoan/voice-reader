@@ -3,7 +3,6 @@ let speechRate = 1.0;
 let synth = window.speechSynthesis;
 let voices = [];
 
-// ページ読み込み時の処理
 window.onload = () => {
     const savedArticles = localStorage.getItem('articles');
     if (savedArticles) {
@@ -11,18 +10,14 @@ window.onload = () => {
         renderArticles();
     }
     loadSettings();
-    populateVoiceList(); // 音声リスト作成
+    populateVoiceList();
 };
 
-// 【重要】音声リストを作成する関数（これがないと選べません）
 function populateVoiceList() {
     voices = synth.getVoices();
     const voiceSelect = document.getElementById('voiceSelect');
     if (!voiceSelect) return;
-
     voiceSelect.innerHTML = '<option value="">-- 音声を選択 --</option>';
-    
-    // 日本語の音声を優先的に追加
     voices.forEach((voice, i) => {
         if (voice.lang.includes('ja') || voice.lang.includes('JP')) {
             const option = document.createElement('option');
@@ -33,98 +28,77 @@ function populateVoiceList() {
     });
 }
 
-// iOS/Safari対策：音声がロードされたらリストを更新
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
 
-// 共有ターゲットからのデータ受け取り
-window.addEventListener('DOMContentLoaded', () => {
-    const parsedUrl = new URL(window.location);
-    const sharedUrl = parsedUrl.searchParams.get('url') || parsedUrl.searchParams.get('text');
-
-    if (sharedUrl) {
-        document.getElementById('urlInput').value = sharedUrl;
-        addArticle();
-    }
-});
-
+// 記事追加
 async function addArticle() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
     const status = document.getElementById('status');
-
     if (!url) return;
-    status.textContent = "⏳ 記事を解析しています...";
+    status.innerHTML = "⏳ 取得中...";
 
     try {
-        const proxyUrl = 'https://r.jina.ai/' + url;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('取得失敗');
+        const response = await fetch('https://r.jina.ai/' + url);
+        if (!response.ok) throw new Error();
         const text = await response.text();
-
-        const lines = text.split('\n').filter(line => line.trim() !== '');
-        const title = lines[0] || "無題の記事";
-
-        const newArticle = {
-            id: Date.now(),
-            title: title,
-            content: text,
-            url: url
-        };
-
+        const title = text.split('\n')[0].substring(0, 50) || "無題の記事";
+        
+        const newArticle = { id: Date.now(), title: title, content: text, url: url };
         articles.unshift(newArticle);
-        saveArticles();
+        localStorage.setItem('articles', JSON.stringify(articles));
         renderArticles();
         urlInput.value = '';
-        status.textContent = "✅ 記事を追加しました";
-    } catch (error) {
-        status.textContent = "❌ 取得に失敗しました";
+        status.innerHTML = "✅ 記事を追加しました";
+    } catch (e) {
+        status.innerHTML = "❌ 取得失敗";
     }
 }
 
+// 表示更新（ボタンのクラス名を style.css に合わせました）
 function renderArticles() {
     const container = document.getElementById('articlesContainer');
     container.innerHTML = '';
     articles.forEach(article => {
         const card = document.createElement('div');
-        card.className = 'article-card';
+        card.className = 'article-card'; // CSSの枠線を適用
         card.innerHTML = `
             <h3>${article.title}</h3>
+            <p style="font-size:12px; color:gray; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${article.url}</p>
             <div class="controls">
-                <button onclick="speakArticle(${article.id})" class="play-btn">▶ 再生</button>
-                <button onclick="stopSpeech()" class="stop-btn">停止</button>
-                <button onclick="deleteArticle(${article.id})" class="delete-btn">🗑 削除</button>
+                <button class="play-btn" onclick="speakArticle(${article.id})">▶ 再生</button>
+                <button class="stop-btn" onclick="stopSpeech()">停止</button>
+                <button class="delete-btn" onclick="deleteArticle(${article.id})">🗑 削除</button>
             </div>
         `;
         container.appendChild(card);
     });
 }
 
+// 読み上げ実行（ここを修正しました）
 function speakArticle(id) {
     const article = articles.find(a => a.id === id);
     if (!article) return;
-    stopSpeech();
+    synth.cancel(); // 二重再生防止
 
     const utterance = new SpeechSynthesisUtterance(article.content);
     utterance.rate = speechRate;
-    
-    // 選択された音声を設定
     const voiceSelect = document.getElementById('voiceSelect');
     if (voiceSelect.value !== "") {
         utterance.voice = voices[voiceSelect.value];
     }
-    
     synth.speak(utterance);
 }
 
 function stopSpeech() { synth.cancel(); }
 function deleteArticle(id) {
     articles = articles.filter(a => a.id !== id);
-    saveArticles();
+    localStorage.setItem('articles', JSON.stringify(articles));
     renderArticles();
 }
-function saveArticles() { localStorage.setItem('articles', JSON.stringify(articles)); }
+
 function loadSettings() {
     const savedRate = localStorage.getItem('speechRate');
     if (savedRate) {
@@ -134,9 +108,9 @@ function loadSettings() {
     }
 }
 
-document.getElementById('speedRange').addEventListener('input', (e) => {
+document.getElementById('speedRange').oninput = (e) => {
     speechRate = parseFloat(e.target.value);
     document.getElementById('speedValue').textContent = speechRate.toFixed(1) + 'x';
     localStorage.setItem('speechRate', speechRate);
-});
-document.getElementById('addBtn').addEventListener('click', addArticle);
+};
+document.getElementById('addBtn').onclick = addArticle;

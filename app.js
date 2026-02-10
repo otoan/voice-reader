@@ -1,95 +1,94 @@
 let articles = [];
 let speechRate = 1.0;
-let synth = window.speechSynthesis;
+const synth = window.speechSynthesis;
 let voices = [];
 
+// 1. 初期化
 window.onload = () => {
-    const savedArticles = localStorage.getItem('articles');
-    if (savedArticles) {
-        articles = JSON.parse(savedArticles);
+    const saved = localStorage.getItem('articles');
+    if (saved) {
+        articles = JSON.parse(saved);
         renderArticles();
     }
     loadSettings();
     populateVoiceList();
 };
 
+// 2. 音声リスト（これがないと再生されません）
 function populateVoiceList() {
     voices = synth.getVoices();
-    const voiceSelect = document.getElementById('voiceSelect');
-    if (!voiceSelect) return;
-    voiceSelect.innerHTML = '<option value="">-- 音声を選択 --</option>';
+    const select = document.getElementById('voiceSelect');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">-- 音声を選択 --</option>';
     voices.forEach((voice, i) => {
-        if (voice.lang.includes('ja') || voice.lang.includes('JP')) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = `${voice.name} (${voice.lang})`;
-            voiceSelect.appendChild(option);
+        if (voice.lang.includes('ja')) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = voice.name;
+            select.appendChild(opt);
         }
     });
 }
-
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
 
-// 記事追加
+// 3. 記事追加（Jina AIを使用）
 async function addArticle() {
-    const urlInput = document.getElementById('urlInput');
-    const url = urlInput.value.trim();
+    const input = document.getElementById('urlInput');
     const status = document.getElementById('status');
+    const url = input.value.trim();
     if (!url) return;
-    status.innerHTML = "⏳ 取得中...";
 
+    status.textContent = "⏳ 取得中...";
     try {
-        const response = await fetch('https://r.jina.ai/' + url);
-        if (!response.ok) throw new Error();
-        const text = await response.text();
-        const title = text.split('\n')[0].substring(0, 50) || "無題の記事";
+        const res = await fetch('https://r.jina.ai/' + url);
+        const text = await res.text();
+        const title = text.split('\n')[0].substring(0, 40) || "無題の記事";
         
-        const newArticle = { id: Date.now(), title: title, content: text, url: url };
-        articles.unshift(newArticle);
+        articles.unshift({ id: Date.now(), title, content: text, url });
         localStorage.setItem('articles', JSON.stringify(articles));
         renderArticles();
-        urlInput.value = '';
-        status.innerHTML = "✅ 記事を追加しました";
+        input.value = '';
+        status.textContent = "✅ 追加完了";
     } catch (e) {
-        status.innerHTML = "❌ 取得失敗";
+        status.textContent = "❌ 失敗";
     }
 }
 
-// 表示更新（ボタンのクラス名を style.css に合わせました）
+// 4. 表示（あなたのCSSクラス名に合わせてボタンを作成）
 function renderArticles() {
     const container = document.getElementById('articlesContainer');
     container.innerHTML = '';
-    articles.forEach(article => {
-        const card = document.createElement('div');
-        card.className = 'article-card'; // CSSの枠線を適用
-        card.innerHTML = `
-            <h3>${article.title}</h3>
-            <p style="font-size:12px; color:gray; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${article.url}</p>
-            <div class="controls">
-                <button class="play-btn" onclick="speakArticle(${article.id})">▶ 再生</button>
-                <button class="stop-btn" onclick="stopSpeech()">停止</button>
-                <button class="delete-btn" onclick="deleteArticle(${article.id})">🗑 削除</button>
+    articles.forEach(art => {
+        const div = document.createElement('div');
+        div.className = 'article-card';
+        div.innerHTML = `
+            <h3>${art.title}</h3>
+            <div class="controls" style="display:flex; gap:10px; margin-top:10px;">
+                <button onclick="speakArticle(${art.id})" style="background:#34c759; color:white; border:none; padding:8px 15px; border-radius:8px; cursor:pointer;">▶ 再生</button>
+                <button onclick="stopSpeech()" style="background:#8e8e93; color:white; border:none; padding:8px 15px; border-radius:8px; cursor:pointer;">停止</button>
+                <button onclick="deleteArticle(${art.id})" style="background:#ff3b30; color:white; border:none; padding:8px 15px; border-radius:8px; cursor:pointer;">削除</button>
             </div>
         `;
-        container.appendChild(card);
+        container.appendChild(div);
     });
 }
 
-// 読み上げ実行（ここを修正しました）
+// 5. 再生（ここを一番シンプルにしました）
 function speakArticle(id) {
-    const article = articles.find(a => a.id === id);
-    if (!article) return;
-    synth.cancel(); // 二重再生防止
+    const art = articles.find(a => a.id === id);
+    if (!art) return;
+    synth.cancel(); 
 
-    const utterance = new SpeechSynthesisUtterance(article.content);
-    utterance.rate = speechRate;
-    const voiceSelect = document.getElementById('voiceSelect');
-    if (voiceSelect.value !== "") {
-        utterance.voice = voices[voiceSelect.value];
+    const uttr = new SpeechSynthesisUtterance(art.content);
+    uttr.rate = speechRate;
+    const select = document.getElementById('voiceSelect');
+    if (select.value !== "") {
+        uttr.voice = voices[select.value];
     }
-    synth.speak(utterance);
+    synth.speak(uttr);
 }
 
 function stopSpeech() { synth.cancel(); }
@@ -98,16 +97,14 @@ function deleteArticle(id) {
     localStorage.setItem('articles', JSON.stringify(articles));
     renderArticles();
 }
-
 function loadSettings() {
-    const savedRate = localStorage.getItem('speechRate');
-    if (savedRate) {
-        speechRate = parseFloat(savedRate);
+    const rate = localStorage.getItem('speechRate');
+    if (rate) {
+        speechRate = parseFloat(rate);
         document.getElementById('speedRange').value = speechRate;
         document.getElementById('speedValue').textContent = speechRate.toFixed(1) + 'x';
     }
 }
-
 document.getElementById('speedRange').oninput = (e) => {
     speechRate = parseFloat(e.target.value);
     document.getElementById('speedValue').textContent = speechRate.toFixed(1) + 'x';

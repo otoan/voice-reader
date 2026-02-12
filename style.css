@@ -31,7 +31,7 @@ header h1 {
     font-weight: 600;
 }
 
-/* 設定パネル */
+/* Settings Panel */
 .settings-panel {
     background: white;
     padding: 20px;
@@ -146,6 +146,7 @@ header h1 {
     font-size: 18px;
     font-weight: 600;
     margin-bottom: 8px;
+    color: #1d1d1f;
 }
 
 .article-url {
@@ -184,14 +185,26 @@ header h1 {
     color: white;
 }
 
+.btn-play:hover {
+    background: #30b350;
+}
+
 .btn-pause {
-    background: #ff9500;
+    background: #8e8e93;
     color: white;
+}
+
+.btn-pause:hover {
+    background: #7c7c80;
 }
 
 .btn-delete {
     background: #ff3b30;
     color: white;
+}
+
+.btn-delete:hover {
+    background: #e6342a;
 }
 
 .empty-state {

@@ -1,8 +1,12 @@
-// 記事データを保存する配列
+// 記事データと設定
 let articles = [];
 let speechRate = 1.0;
 const synth = window.speechSynthesis;
 let voices = [];
+let dictionary = {}; // 読み間違い修正用の辞書
+
+// スプレッドシートのURL（CSVエクスポート形式）
+const DICTIONARY_URL = 'https://docs.google.com/spreadsheets/d/1uDybkx1ZhTGUaqBA9K7VZsSiPuSVAb8t-E5WaUKUHyM/export?format=csv&gid=1244626711';
 
 // ページ読み込み時
 window.addEventListener('load', () => {
@@ -10,7 +14,94 @@ window.addEventListener('load', () => {
     renderArticles();
     loadSettings();
     populateVoiceList();
+    loadDictionary(); // 辞書を読み込み
 });
+
+// 辞書を読み込む
+async function loadDictionary() {
+    try {
+        const response = await fetch(DICTIONARY_URL);
+        const csvText = await response.text();
+        
+        // CSVをパース
+        const lines = csvText.split('\n');
+        dictionary = {};
+        
+        // 1行目はヘッダーなのでスキップ
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            // カンマで分割（簡易的なCSVパース）
+            const parts = line.split(',');
+            if (parts.length >= 2) {
+                const original = parts[0].trim();
+                const reading = parts[1].trim();
+                if (original && reading) {
+                    dictionary[original] = reading;
+                }
+            }
+        }
+        
+        console.log('辞書を読み込みました:', Object.keys(dictionary).length + '件');
+    } catch (error) {
+        console.error('辞書の読み込みに失敗:', error);
+    }
+}
+
+// テキストを辞書で置換
+function applyDictionary(text) {
+    let result = text;
+    
+    // 辞書の各エントリで置換
+    for (const [original, reading] of Object.entries(dictionary)) {
+        // 大文字小文字を区別せずに置換
+        const regex = new RegExp(original, 'gi');
+        result = result.replace(regex, reading);
+    }
+    
+    return result;
+}
+
+// テキストをクリーニング（画像URL、Markdown記法などを除去）
+function cleanTextForSpeech(text) {
+    let cleaned = text;
+    
+    // 画像のMarkdown記法を削除 ![alt](url)
+    cleaned = cleaned.replace(/!\[([^\]]*)\]\([^\)]+\)/g, '');
+    
+    // リンクのMarkdown記法を削除 [text](url) → text
+    cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+    
+    // URL全般を削除 (http:// または https://)
+    cleaned = cleaned.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // Markdown見出し記号を削除 (# ## ### など)
+    cleaned = cleaned.replace(/^#+\s*/gm, '');
+    
+    // 太字・斜体記号を削除 (**text** または *text*)
+    cleaned = cleaned.replace(/\*\*([^\*]+)\*\*/g, '$1');
+    cleaned = cleaned.replace(/\*([^\*]+)\*/g, '$1');
+    
+    // コードブロックを削除 ```code```
+    cleaned = cleaned.replace(/```[^`]*```/g, '');
+    
+    // インラインコードを削除 `code`
+    cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+    
+    // 引用記号を削除
+    cleaned = cleaned.replace(/^>\s*/gm, '');
+    
+    // 水平線を削除
+    cleaned = cleaned.replace(/^---+$/gm, '');
+    cleaned = cleaned.replace(/^\*\*\*+$/gm, '');
+    
+    // 連続する空白・改行を整理
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    cleaned = cleaned.replace(/\s{2,}/g, ' ');
+    
+    return cleaned.trim();
+}
 
 // 音声リストを読み込み
 function populateVoiceList() {
@@ -21,13 +112,19 @@ function populateVoiceList() {
     // 日本語の音声のみフィルタ
     const japaneseVoices = voices.filter(voice => voice.lang.includes('ja'));
     
-    select.innerHTML = '<option value="">-- Select Voice --</option>';
+    select.innerHTML = '<option value="">-- デフォルト音声 --</option>';
     japaneseVoices.forEach((voice, i) => {
         const opt = document.createElement('option');
         opt.value = i;
         opt.textContent = `${voice.name} (${voice.lang})`;
         select.appendChild(opt);
     });
+    
+    // 保存された音声を復元
+    const savedVoiceIndex = localStorage.getItem('voiceIndex');
+    if (savedVoiceIndex && savedVoiceIndex !== "") {
+        select.value = savedVoiceIndex;
+    }
 }
 
 // 音声リストの再読み込み
@@ -66,11 +163,10 @@ async function addArticle() {
     status.textContent = "⏳ 記事を取得中...";
     
     try {
-        // Jina AI Readerを使用して記事内容を取得
         const res = await fetch('https://r.jina.ai/' + url);
         const text = await res.text();
         
-        // 不要な部分を削除（URL Source:, Markdown Source:などの行）
+        // 不要な部分を削除
         let cleanedText = text
             .split('\n')
             .filter(line => {
@@ -82,12 +178,11 @@ async function addArticle() {
             })
             .join('\n');
         
-        // タイトルを抽出（最初の見出しまたは最初の行）
+        // タイトルを抽出
         const lines = cleanedText.split('\n').filter(line => line.trim());
         let title = "無題の記事";
         let contentStartIndex = 0;
         
-        // # で始まる行をタイトルとして探す
         for (let i = 0; i < Math.min(5, lines.length); i++) {
             const line = lines[i].trim();
             if (line.startsWith('#')) {
@@ -97,13 +192,11 @@ async function addArticle() {
             }
         }
         
-        // タイトルが見つからない場合は最初の行を使用
         if (title === "無題の記事" && lines.length > 0) {
             title = lines[0].substring(0, 100);
             contentStartIndex = 1;
         }
         
-        // 本文を取得
         const content = lines.slice(contentStartIndex).join('\n').trim() || "内容を取得できませんでした";
         
         const article = {
@@ -177,14 +270,11 @@ function playArticle(id) {
     const article = articles.find(a => a.id === id);
     if (!article) return;
     
-    // 既存の読み上げを停止
     synth.cancel();
     
-    // 長い記事の場合は分割して読み上げ（Chromeの制限対策）
-    const maxLength = 32000; // Chromeの音声合成の文字数制限
+    const maxLength = 32000;
     let textToSpeak = article.content;
     
-    // 文字数が多い場合は警告
     if (textToSpeak.length > maxLength) {
         if (!confirm(`この記事は${textToSpeak.length.toLocaleString()}文字あります。最初の${maxLength.toLocaleString()}文字のみ読み上げますか？`)) {
             return;
@@ -192,11 +282,16 @@ function playArticle(id) {
         textToSpeak = textToSpeak.substring(0, maxLength);
     }
     
+    // テキストをクリーニング（画像URLなどを除去）
+    textToSpeak = cleanTextForSpeech(textToSpeak);
+    
+    // 辞書で置換
+    textToSpeak = applyDictionary(textToSpeak);
+    
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.lang = 'ja-JP';
     utterance.rate = speechRate;
     
-    // 選択された音声を適用
     const select = document.getElementById('voiceSelect');
     if (select.value !== "") {
         const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
@@ -221,10 +316,8 @@ function playArticle(id) {
         if (status) status.textContent = "❌ 読み上げエラー";
     };
     
-    // 読み上げ開始
     synth.speak(utterance);
     
-    // タイムアウト対策（読み上げが始まらない場合）
     setTimeout(() => {
         if (!synth.speaking) {
             alert('読み上げが開始されませんでした。ブラウザを更新してもう一度お試しください。');
@@ -232,14 +325,12 @@ function playArticle(id) {
     }, 1000);
 }
 
-// 停止
 function stopSpeech() {
     synth.cancel();
     const status = document.getElementById('status');
     if (status) status.textContent = "";
 }
 
-// 記事を削除
 function deleteArticle(id) {
     if (!confirm('この記事を削除しますか？')) return;
     
@@ -248,12 +339,10 @@ function deleteArticle(id) {
     renderArticles();
 }
 
-// LocalStorageに保存
 function saveArticles() {
     localStorage.setItem('articles', JSON.stringify(articles));
 }
 
-// LocalStorageから読み込み
 function loadArticles() {
     const saved = localStorage.getItem('articles');
     if (saved) {
@@ -266,7 +355,6 @@ function loadArticles() {
     }
 }
 
-// 設定を読み込み
 function loadSettings() {
     const savedRate = localStorage.getItem('speechRate');
     if (savedRate) {

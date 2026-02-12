@@ -70,12 +70,41 @@ async function addArticle() {
         const res = await fetch('https://r.jina.ai/' + url);
         const text = await res.text();
         
-        // タイトルを抽出（最初の行から）
-        const lines = text.split('\n').filter(line => line.trim());
-        const title = lines[0] ? lines[0].substring(0, 100) : "無題の記事";
+        // 不要な部分を削除（URL Source:, Markdown Source:などの行）
+        let cleanedText = text
+            .split('\n')
+            .filter(line => {
+                const trimmed = line.trim();
+                return !trimmed.startsWith('URL Source:') && 
+                       !trimmed.startsWith('Markdown Source:') &&
+                       !trimmed.startsWith('Title:') &&
+                       trimmed.length > 0;
+            })
+            .join('\n');
         
-        // 本文を取得（最初の行以降）
-        const content = lines.slice(1).join('\n').trim() || "内容を取得できませんでした";
+        // タイトルを抽出（最初の見出しまたは最初の行）
+        const lines = cleanedText.split('\n').filter(line => line.trim());
+        let title = "無題の記事";
+        let contentStartIndex = 0;
+        
+        // # で始まる行をタイトルとして探す
+        for (let i = 0; i < Math.min(5, lines.length); i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#')) {
+                title = line.replace(/^#+\s*/, '').substring(0, 100);
+                contentStartIndex = i + 1;
+                break;
+            }
+        }
+        
+        // タイトルが見つからない場合は最初の行を使用
+        if (title === "無題の記事" && lines.length > 0) {
+            title = lines[0].substring(0, 100);
+            contentStartIndex = 1;
+        }
+        
+        // 本文を取得
+        const content = lines.slice(contentStartIndex).join('\n').trim() || "内容を取得できませんでした";
         
         const article = {
             id: Date.now(),
@@ -107,111 +136,4 @@ async function addArticle() {
 
 // 記事リストを表示
 function renderArticles() {
-    const listElement = document.getElementById('articleList');
-    
-    if (articles.length === 0) {
-        listElement.innerHTML = `
-            <div class="empty-state">
-                <p>📝 No articles yet</p>
-                <p style="font-size: 14px; margin-top: 8px;">Add a URL to get started</p>
-            </div>
-        `;
-        return;
-    }
-    
-    listElement.innerHTML = articles.map(article => `
-        <div class="article-item" data-id="${article.id}">
-            <div class="article-title">${escapeHtml(article.title)}</div>
-            <div class="article-url">${escapeHtml(article.url)}</div>
-            <div class="article-content">${escapeHtml(article.content.substring(0, 150))}...</div>
-            <div class="article-controls">
-                <button class="btn btn-play" onclick="playArticle(${article.id})">▶ Play</button>
-                <button class="btn btn-pause" onclick="stopSpeech()">⏹ Stop</button>
-                <button class="btn btn-delete" onclick="deleteArticle(${article.id})">🗑 Delete</button>
-            </div>
-        </div>
-    `).join('');
-}
-
-// HTMLエスケープ
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// 記事を再生
-function playArticle(id) {
-    const article = articles.find(a => a.id === id);
-    if (!article) return;
-    
-    synth.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(article.content);
-    utterance.lang = 'ja-JP';
-    utterance.rate = speechRate;
-    
-    // 選択された音声を適用
-    const select = document.getElementById('voiceSelect');
-    if (select.value !== "") {
-        const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
-        utterance.voice = japaneseVoices[select.value];
-    }
-    
-    utterance.onend = () => {
-        console.log('読み上げ完了');
-    };
-    
-    utterance.onerror = (e) => {
-        console.error('読み上げエラー:', e);
-    };
-    
-    synth.speak(utterance);
-}
-
-// 停止
-function stopSpeech() {
-    synth.cancel();
-}
-
-// 記事を削除
-function deleteArticle(id) {
-    if (!confirm('この記事を削除しますか？')) return;
-    
-    articles = articles.filter(a => a.id !== id);
-    saveArticles();
-    renderArticles();
-}
-
-// LocalStorageに保存
-function saveArticles() {
-    localStorage.setItem('articles', JSON.stringify(articles));
-}
-
-// LocalStorageから読み込み
-function loadArticles() {
-    const saved = localStorage.getItem('articles');
-    if (saved) {
-        try {
-            articles = JSON.parse(saved);
-        } catch (e) {
-            console.error('記事の読み込みに失敗:', e);
-            articles = [];
-        }
-    }
-}
-
-// 設定を読み込み
-function loadSettings() {
-    const savedRate = localStorage.getItem('speechRate');
-    if (savedRate) {
-        speechRate = parseFloat(savedRate);
-        document.getElementById('speedRange').value = speechRate;
-        document.getElementById('speedValue').textContent = speechRate.toFixed(1) + 'x';
-    }
-    
-    const savedVoiceIndex = localStorage.getItem('voiceIndex');
-    if (savedVoiceIndex) {
-        document.getElementById('voiceSelect').value = savedVoiceIndex;
-    }
-}
+    const listElement = docum

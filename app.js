@@ -136,4 +136,147 @@ async function addArticle() {
 
 // 記事リストを表示
 function renderArticles() {
-    const listElement = docum
+    const listElement = document.getElementById('articleList');
+    
+    if (articles.length === 0) {
+        listElement.innerHTML = `
+            <div class="empty-state">
+                <p>📝 No articles yet</p>
+                <p style="font-size: 14px; margin-top: 8px;">Add a URL to get started</p>
+            </div>
+        `;
+        return;
+    }
+    
+    listElement.innerHTML = articles.map(article => `
+        <div class="article-item" data-id="${article.id}">
+            <div class="article-title">${escapeHtml(article.title)}</div>
+            <div class="article-url">${escapeHtml(article.url)}</div>
+            <div class="article-content">${escapeHtml(article.content.substring(0, 150))}...</div>
+            <div class="article-meta">
+                <small>文字数: ${article.content.length.toLocaleString()}文字</small>
+            </div>
+            <div class="article-controls">
+                <button class="btn btn-play" onclick="playArticle(${article.id})">▶ Play</button>
+                <button class="btn btn-pause" onclick="stopSpeech()">⏹ Stop</button>
+                <button class="btn btn-delete" onclick="deleteArticle(${article.id})">🗑 Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// HTMLエスケープ
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 記事を再生
+function playArticle(id) {
+    const article = articles.find(a => a.id === id);
+    if (!article) return;
+    
+    // 既存の読み上げを停止
+    synth.cancel();
+    
+    // 長い記事の場合は分割して読み上げ（Chromeの制限対策）
+    const maxLength = 32000; // Chromeの音声合成の文字数制限
+    let textToSpeak = article.content;
+    
+    // 文字数が多い場合は警告
+    if (textToSpeak.length > maxLength) {
+        if (!confirm(`この記事は${textToSpeak.length.toLocaleString()}文字あります。最初の${maxLength.toLocaleString()}文字のみ読み上げますか？`)) {
+            return;
+        }
+        textToSpeak = textToSpeak.substring(0, maxLength);
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.lang = 'ja-JP';
+    utterance.rate = speechRate;
+    
+    // 選択された音声を適用
+    const select = document.getElementById('voiceSelect');
+    if (select.value !== "") {
+        const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
+        utterance.voice = japaneseVoices[select.value];
+    }
+    
+    utterance.onstart = () => {
+        console.log('読み上げ開始');
+        const status = document.getElementById('status');
+        if (status) status.textContent = "🔊 読み上げ中...";
+    };
+    
+    utterance.onend = () => {
+        console.log('読み上げ完了');
+        const status = document.getElementById('status');
+        if (status) status.textContent = "";
+    };
+    
+    utterance.onerror = (e) => {
+        console.error('読み上げエラー:', e);
+        const status = document.getElementById('status');
+        if (status) status.textContent = "❌ 読み上げエラー";
+    };
+    
+    // 読み上げ開始
+    synth.speak(utterance);
+    
+    // タイムアウト対策（読み上げが始まらない場合）
+    setTimeout(() => {
+        if (!synth.speaking) {
+            alert('読み上げが開始されませんでした。ブラウザを更新してもう一度お試しください。');
+        }
+    }, 1000);
+}
+
+// 停止
+function stopSpeech() {
+    synth.cancel();
+    const status = document.getElementById('status');
+    if (status) status.textContent = "";
+}
+
+// 記事を削除
+function deleteArticle(id) {
+    if (!confirm('この記事を削除しますか？')) return;
+    
+    articles = articles.filter(a => a.id !== id);
+    saveArticles();
+    renderArticles();
+}
+
+// LocalStorageに保存
+function saveArticles() {
+    localStorage.setItem('articles', JSON.stringify(articles));
+}
+
+// LocalStorageから読み込み
+function loadArticles() {
+    const saved = localStorage.getItem('articles');
+    if (saved) {
+        try {
+            articles = JSON.parse(saved);
+        } catch (e) {
+            console.error('記事の読み込みに失敗:', e);
+            articles = [];
+        }
+    }
+}
+
+// 設定を読み込み
+function loadSettings() {
+    const savedRate = localStorage.getItem('speechRate');
+    if (savedRate) {
+        speechRate = parseFloat(savedRate);
+        document.getElementById('speedRange').value = speechRate;
+        document.getElementById('speedValue').textContent = speechRate.toFixed(1) + 'x';
+    }
+    
+    const savedVoiceIndex = localStorage.getItem('voiceIndex');
+    if (savedVoiceIndex) {
+        document.getElementById('voiceSelect').value = savedVoiceIndex;
+    }
+}

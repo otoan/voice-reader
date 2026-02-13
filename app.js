@@ -14,8 +14,36 @@ window.addEventListener('load', () => {
     renderArticles();
     loadSettings();
     populateVoiceList();
-    loadDictionary(); // 辞書を読み込み
+    loadDictionary();
+    handleSharedUrl(); // 共有URLを処理
 });
+
+// 共有URLを処理する関数
+function handleSharedUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedUrl = urlParams.get('url') || urlParams.get('text');
+    
+    if (sharedUrl) {
+        // URLが有効か確認
+        try {
+            new URL(sharedUrl);
+            // 入力欄にセット
+            document.getElementById('articleUrl').value = sharedUrl;
+            // 自動的に追加
+            setTimeout(() => {
+                addArticle();
+                // URLパラメータをクリア
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }, 500);
+        } catch (e) {
+            console.log('無効なURL:', sharedUrl);
+            // テキストとして共有された場合、入力欄にセット
+            if (sharedUrl) {
+                document.getElementById('articleUrl').value = sharedUrl;
+            }
+        }
+    }
+}
 
 // 辞書を読み込む
 async function loadDictionary() {

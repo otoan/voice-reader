@@ -3,9 +3,12 @@ let articles = [];
 let speechRate = 1.0;
 const synth = window.speechSynthesis;
 let voices = [];
-let dictionary = {}; // 読み間違い修正用の辞書
+let dictionary = {};
+let currentUtterance = null;
+let isPaused = false;
+let currentArticleId = null;
 
-// スプレッドシートのURL（CSVエクスポート形式）
+// スプレッドシートのURL
 const DICTIONARY_URL = 'https://docs.google.com/spreadsheets/d/1uDybkx1ZhTGUaqBA9K7VZsSiPuSVAb8t-E5WaUKUHyM/export?format=csv&gid=1244626711';
 
 // ページ読み込み時
@@ -15,29 +18,43 @@ window.addEventListener('load', () => {
     loadSettings();
     populateVoiceList();
     loadDictionary();
-    handleSharedUrl(); // 共有URLを処理
+    handleSharedUrl();
 });
 
-// 共有URLを処理する関数
+// タブ切り替え
+function switchTab(tab) {
+    const urlTab = document.getElementById('urlTab');
+    const textTab = document.getElementById('textTab');
+    const tabs = document.querySelectorAll('.tab-btn');
+    
+    tabs.forEach(btn => btn.classList.remove('active'));
+    
+    if (tab === 'url') {
+        urlTab.style.display = 'flex';
+        textTab.style.display = 'none';
+        tabs[0].classList.add('active');
+    } else {
+        urlTab.style.display = 'none';
+        textTab.style.display = 'block';
+        tabs[1].classList.add('active');
+    }
+}
+
+// 共有URLを処理
 function handleSharedUrl() {
     const urlParams = new URLSearchParams(window.location.search);
     const sharedUrl = urlParams.get('url') || urlParams.get('text');
     
     if (sharedUrl) {
-        // URLが有効か確認
         try {
             new URL(sharedUrl);
-            // 入力欄にセット
             document.getElementById('articleUrl').value = sharedUrl;
-            // 自動的に追加
             setTimeout(() => {
-                addArticle();
-                // URLパラメータをクリア
+                addArticleFromUrl();
                 window.history.replaceState({}, document.title, window.location.pathname);
             }, 500);
         } catch (e) {
             console.log('無効なURL:', sharedUrl);
-            // テキストとして共有された場合、入力欄にセット
             if (sharedUrl) {
                 document.getElementById('articleUrl').value = sharedUrl;
             }
@@ -50,17 +67,13 @@ async function loadDictionary() {
     try {
         const response = await fetch(DICTIONARY_URL);
         const csvText = await response.text();
-        
-        // CSVをパース
         const lines = csvText.split('\n');
         dictionary = {};
         
-        // 1行目はヘッダーなのでスキップ
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
             
-            // カンマで分割（簡易的なCSVパース）
             const parts = line.split(',');
             if (parts.length >= 2) {
                 const original = parts[0].trim();
@@ -80,41 +93,43 @@ async function loadDictionary() {
 // テキストを辞書で置換
 function applyDictionary(text) {
     let result = text;
-    
-    // 辞書の各エントリで置換
     for (const [original, reading] of Object.entries(dictionary)) {
-        // 大文字小文字を区別せずに置換
         const regex = new RegExp(original, 'gi');
         result = result.replace(regex, reading);
     }
-    
     return result;
 }
 
-// テキストをクリーニング（画像URL、Markdown記法などを除去）
+// テキストをクリーニング（強化版）
 function cleanTextForSpeech(text) {
     let cleaned = text;
     
-    // 画像のMarkdown記法を削除 ![alt](url)
+    // ナビゲーション的な文言を除去
+    const navPatterns = [
+        /ホーム|トップ|メニュー|ログイン|新規登録|お問い合わせ|プライバシーポリシー|利用規約/gi,
+        /フォロー|シェア|いいね|コメント|ブックマーク/gi,
+        /前の記事|次の記事|関連記事|おすすめ記事/gi,
+        /カテゴリー|タグ|検索/gi
+    ];
+    
+    // 画像のMarkdown記法を削除
     cleaned = cleaned.replace(/!\[([^\]]*)\]\([^\)]+\)/g, '');
     
-    // リンクのMarkdown記法を削除 [text](url) → text
+    // リンクのMarkdown記法を削除
     cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
     
-    // URL全般を削除 (http:// または https://)
+    // URL全般を削除
     cleaned = cleaned.replace(/https?:\/\/[^\s]+/g, '');
     
-    // Markdown見出し記号を削除 (# ## ### など)
+    // Markdown見出し記号を削除
     cleaned = cleaned.replace(/^#+\s*/gm, '');
     
-    // 太字・斜体記号を削除 (**text** または *text*)
+    // 太字・斜体記号を削除
     cleaned = cleaned.replace(/\*\*([^\*]+)\*\*/g, '$1');
     cleaned = cleaned.replace(/\*([^\*]+)\*/g, '$1');
     
-    // コードブロックを削除 ```code```
+    // コードブロックを削除
     cleaned = cleaned.replace(/```[^`]*```/g, '');
-    
-    // インラインコードを削除 `code`
     cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
     
     // 引用記号を削除
@@ -137,7 +152,6 @@ function populateVoiceList() {
     const select = document.getElementById('voiceSelect');
     if (!select) return;
     
-    // 日本語の音声のみフィルタ
     const japaneseVoices = voices.filter(voice => voice.lang.includes('ja'));
     
     select.innerHTML = '<option value="">-- デフォルト音声 --</option>';
@@ -148,14 +162,12 @@ function populateVoiceList() {
         select.appendChild(opt);
     });
     
-    // 保存された音声を復元
     const savedVoiceIndex = localStorage.getItem('voiceIndex');
     if (savedVoiceIndex && savedVoiceIndex !== "") {
         select.value = savedVoiceIndex;
     }
 }
 
-// 音声リストの再読み込み
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
@@ -172,13 +184,16 @@ document.getElementById('voiceSelect').addEventListener('change', (e) => {
     localStorage.setItem('voiceIndex', e.target.value);
 });
 
-// 記事を追加
-document.getElementById('addBtn').addEventListener('click', addArticle);
+// URL入力から記事を追加
+document.getElementById('addUrlBtn').addEventListener('click', addArticleFromUrl);
 document.getElementById('articleUrl').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') addArticle();
+    if (e.key === 'Enter') addArticleFromUrl();
 });
 
-async function addArticle() {
+// テキスト入力から記事を追加
+document.getElementById('addTextBtn').addEventListener('click', addArticleFromText);
+
+async function addArticleFromUrl() {
     const input = document.getElementById('articleUrl');
     const status = document.getElementById('status');
     const url = input.value.trim();
@@ -194,7 +209,6 @@ async function addArticle() {
         const res = await fetch('https://r.jina.ai/' + url);
         const text = await res.text();
         
-        // 不要な部分を削除
         let cleanedText = text
             .split('\n')
             .filter(line => {
@@ -206,7 +220,6 @@ async function addArticle() {
             })
             .join('\n');
         
-        // タイトルを抽出
         const lines = cleanedText.split('\n').filter(line => line.trim());
         let title = "無題の記事";
         let contentStartIndex = 0;
@@ -255,6 +268,40 @@ async function addArticle() {
     }
 }
 
+function addArticleFromText() {
+    const textInput = document.getElementById('articleText');
+    const titleInput = document.getElementById('articleTitle');
+    const status = document.getElementById('status');
+    
+    const content = textInput.value.trim();
+    const title = titleInput.value.trim() || "無題のテキスト";
+    
+    if (!content) {
+        alert('テキストを入力してください');
+        return;
+    }
+    
+    const article = {
+        id: Date.now(),
+        title: title,
+        url: '',
+        content: content,
+        savedDate: new Date().toISOString()
+    };
+    
+    articles.unshift(article);
+    saveArticles();
+    renderArticles();
+    
+    textInput.value = '';
+    titleInput.value = '';
+    status.textContent = "✅ 追加完了！";
+    
+    setTimeout(() => {
+        status.textContent = "";
+    }, 2000);
+}
+
 // 記事リストを表示
 function renderArticles() {
     const listElement = document.getElementById('articleList');
@@ -263,27 +310,37 @@ function renderArticles() {
         listElement.innerHTML = `
             <div class="empty-state">
                 <p>📝 No articles yet</p>
-                <p style="font-size: 14px; margin-top: 8px;">Add a URL to get started</p>
+                <p style="font-size: 14px; margin-top: 8px;">Add a URL or text to get started</p>
             </div>
         `;
         return;
     }
     
-    listElement.innerHTML = articles.map(article => `
-        <div class="article-item" data-id="${article.id}">
-            <div class="article-title">${escapeHtml(article.title)}</div>
-            <div class="article-url">${escapeHtml(article.url)}</div>
-            <div class="article-content">${escapeHtml(article.content.substring(0, 150))}...</div>
-            <div class="article-meta">
-                <small>文字数: ${article.content.length.toLocaleString()}文字</small>
+    listElement.innerHTML = articles.map(article => {
+        const isPlaying = currentArticleId === article.id && synth.speaking;
+        const urlLink = article.url ? 
+            `<a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer" class="article-url">${escapeHtml(article.url)}</a>` :
+            `<div class="article-url" style="color: #999;">テキスト入力</div>`;
+        
+        return `
+            <div class="article-item" data-id="${article.id}">
+                <div class="article-title">${escapeHtml(article.title)}</div>
+                ${urlLink}
+                <div class="article-content">${escapeHtml(article.content.substring(0, 150))}...</div>
+                <div class="article-meta">
+                    <small>文字数: ${article.content.length.toLocaleString()}文字</small>
+                </div>
+                <div class="article-controls">
+                    ${isPlaying ? 
+                        `<button class="btn btn-pause" onclick="pauseArticle(${article.id})">${isPaused ? '▶ 再開' : '⏸ 一時停止'}</button>` :
+                        `<button class="btn btn-play" onclick="playArticle(${article.id})">▶ Play</button>`
+                    }
+                    <button class="btn btn-pause" onclick="stopSpeech()">⏹ Stop</button>
+                    <button class="btn btn-delete" onclick="deleteArticle(${article.id})">🗑 Delete</button>
+                </div>
             </div>
-            <div class="article-controls">
-                <button class="btn btn-play" onclick="playArticle(${article.id})">▶ Play</button>
-                <button class="btn btn-pause" onclick="stopSpeech()">⏹ Stop</button>
-                <button class="btn btn-delete" onclick="deleteArticle(${article.id})">🗑 Delete</button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 // HTMLエスケープ
@@ -299,6 +356,8 @@ function playArticle(id) {
     if (!article) return;
     
     synth.cancel();
+    currentArticleId = id;
+    isPaused = false;
     
     const maxLength = 32000;
     let textToSpeak = article.content;
@@ -310,53 +369,65 @@ function playArticle(id) {
         textToSpeak = textToSpeak.substring(0, maxLength);
     }
     
-    // テキストをクリーニング（画像URLなどを除去）
     textToSpeak = cleanTextForSpeech(textToSpeak);
-    
-    // 辞書で置換
     textToSpeak = applyDictionary(textToSpeak);
     
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = 'ja-JP';
-    utterance.rate = speechRate;
+    currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
+    currentUtterance.lang = 'ja-JP';
+    currentUtterance.rate = speechRate;
     
     const select = document.getElementById('voiceSelect');
     if (select.value !== "") {
         const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
-        utterance.voice = japaneseVoices[select.value];
+        currentUtterance.voice = japaneseVoices[select.value];
     }
     
-    utterance.onstart = () => {
+    currentUtterance.onstart = () => {
         console.log('読み上げ開始');
         const status = document.getElementById('status');
         if (status) status.textContent = "🔊 読み上げ中...";
+        renderArticles();
     };
     
-    utterance.onend = () => {
+    currentUtterance.onend = () => {
         console.log('読み上げ完了');
         const status = document.getElementById('status');
         if (status) status.textContent = "";
+        currentArticleId = null;
+        renderArticles();
     };
     
-    utterance.onerror = (e) => {
+    currentUtterance.onerror = (e) => {
         console.error('読み上げエラー:', e);
         const status = document.getElementById('status');
         if (status) status.textContent = "❌ 読み上げエラー";
+        currentArticleId = null;
+        renderArticles();
     };
     
-    synth.speak(utterance);
-    
-    setTimeout(() => {
-        if (!synth.speaking) {
-            alert('読み上げが開始されませんでした。ブラウザを更新してもう一度お試しください。');
-        }
-    }, 1000);
+    synth.speak(currentUtterance);
+    renderArticles();
+}
+
+// 一時停止/再開
+function pauseArticle(id) {
+    if (isPaused) {
+        synth.resume();
+        isPaused = false;
+    } else {
+        synth.pause();
+        isPaused = true;
+    }
+    renderArticles();
 }
 
 function stopSpeech() {
     synth.cancel();
+    currentArticleId = null;
+    isPaused = false;
     const status = document.getElementById('status');
     if (status) status.textContent = "";
+    renderArticles();
 }
 
 function deleteArticle(id) {

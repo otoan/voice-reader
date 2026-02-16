@@ -12,6 +12,15 @@
     <link rel="apple-touch-icon" href="icon-192.png">
 
     <link rel="stylesheet" href="style.css">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VKZFCHS3DR"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-VKZFCHS3DR');
+</script>
 </head>
 <body>
     <div class="container">
@@ -32,9 +41,23 @@
             </div>
         </div>
 
-        <div class="add-article">
+        <!-- タブ切り替え -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('url')">URL</button>
+            <button class="tab-btn" onclick="switchTab('text')">テキスト</button>
+        </div>
+
+        <!-- URL入力タブ -->
+        <div class="add-article" id="urlTab">
             <input type="text" id="articleUrl" placeholder="Paste article URL here">
-            <button id="addBtn">Add</button>
+            <button id="addUrlBtn">Add</button>
+        </div>
+
+        <!-- テキスト入力タブ -->
+        <div class="add-article" id="textTab" style="display:none;">
+            <textarea id="articleText" placeholder="Paste text here" rows="4"></textarea>
+            <input type="text" id="articleTitle" placeholder="タイトル（オプション）" style="margin-top: 8px;">
+            <button id="addTextBtn">Add</button>
         </div>
 
         <div id="status" style="text-align: center; font-size: 14px; color: #666; margin-bottom: 10px;"></div>

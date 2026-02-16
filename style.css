@@ -4,11 +4,32 @@
     box-sizing: border-box;
 }
 
+:root {
+    --bg-primary: #f5f5f7;
+    --bg-secondary: white;
+    --text-primary: #1d1d1f;
+    --text-secondary: #86868b;
+    --border-color: #d2d2d7;
+    --accent-color: #0071e3;
+    --shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+[data-theme="dark"] {
+    --bg-primary: #1d1d1f;
+    --bg-secondary: #2d2d2f;
+    --text-primary: #f5f5f7;
+    --text-secondary: #98989d;
+    --border-color: #48484a;
+    --accent-color: #0a84ff;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f5f5f7;
-    color: #1d1d1f;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     line-height: 1.6;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .container {
@@ -19,11 +40,12 @@ body {
 
 header {
     text-align: center;
-    padding: 20px 0;
-    background: white;
+    padding: 20px;
+    background: var(--bg-secondary);
     border-radius: 12px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
+    position: relative;
 }
 
 header h1 {
@@ -31,13 +53,30 @@ header h1 {
     font-weight: 600;
 }
 
+.dark-mode-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 20px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.dark-mode-toggle:hover {
+    transform: scale(1.1);
+}
+
 /* Settings Panel */
 .settings-panel {
-    background: white;
+    background: var(--bg-secondary);
     padding: 20px;
     border-radius: 12px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
 }
 
 .setting-group {
@@ -59,7 +98,7 @@ header h1 {
     width: 100%;
     height: 6px;
     border-radius: 3px;
-    background: #d2d2d7;
+    background: var(--border-color);
     outline: none;
     -webkit-appearance: none;
 }
@@ -69,7 +108,7 @@ header h1 {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #0071e3;
+    background: var(--accent-color);
     cursor: pointer;
 }
 
@@ -77,18 +116,19 @@ header h1 {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #0071e3;
+    background: var(--accent-color);
     cursor: pointer;
     border: none;
 }
 
-#voiceSelect {
+#voiceSelect, #languageSelect {
     width: 100%;
     padding: 10px;
-    border: 1px solid #d2d2d7;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
-    background: white;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 /* タブ */
@@ -101,75 +141,55 @@ header h1 {
 .tab-btn {
     flex: 1;
     padding: 10px;
-    background: white;
-    border: 1px solid #d2d2d7;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
     transition: all 0.2s;
+    color: var(--text-primary);
 }
 
 .tab-btn.active {
-    background: #0071e3;
+    background: var(--accent-color);
     color: white;
-    border-color: #0071e3;
+    border-color: var(--accent-color);
 }
 
 .add-article {
-    background: white;
+    background: var(--bg-secondary);
     padding: 20px;
     border-radius: 12px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
 
-#articleUrl {
-    flex: 1;
+#articleUrl, #articleText, #articleTitle {
+    width: 100%;
     padding: 12px 16px;
-    border: 1px solid #d2d2d7;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 16px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
-#articleUrl:focus {
+#articleUrl:focus, #articleText:focus, #articleTitle:focus {
     outline: none;
-    border-color: #0071e3;
+    border-color: var(--accent-color);
 }
 
 #articleText {
-    width: 100%;
-    padding: 12px 16px;
-    border: 1px solid #d2d2d7;
-    border-radius: 8px;
-    font-size: 16px;
     font-family: inherit;
     resize: vertical;
 }
 
-#articleText:focus {
-    outline: none;
-    border-color: #0071e3;
-}
-
-#articleTitle {
-    width: 100%;
-    padding: 12px 16px;
-    border: 1px solid #d2d2d7;
-    border-radius: 8px;
-    font-size: 16px;
-}
-
-#articleTitle:focus {
-    outline: none;
-    border-color: #0071e3;
-}
-
 #addUrlBtn, #addTextBtn {
     padding: 12px 24px;
-    background: #0071e3;
+    background: var(--accent-color);
     color: white;
     border: none;
     border-radius: 8px;
@@ -179,7 +199,7 @@ header h1 {
 }
 
 #addUrlBtn:hover, #addTextBtn:hover {
-    background: #0077ed;
+    opacity: 0.9;
 }
 
 .article-list {
@@ -189,22 +209,22 @@ header h1 {
 }
 
 .article-item {
-    background: white;
+    background: var(--bg-secondary);
     padding: 16px;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
 }
 
 .article-title {
     font-size: 18px;
     font-weight: 600;
     margin-bottom: 8px;
-    color: #1d1d1f;
+    color: var(--text-primary);
 }
 
 .article-url {
     font-size: 14px;
-    color: #0071e3;
+    color: var(--accent-color);
     margin-bottom: 8px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -219,14 +239,14 @@ header h1 {
 
 .article-content {
     font-size: 14px;
-    color: #1d1d1f;
+    color: var(--text-primary);
     margin-bottom: 12px;
     line-height: 1.5;
 }
 
 .article-meta {
     font-size: 12px;
-    color: #86868b;
+    color: var(--text-secondary);
     margin-bottom: 12px;
 }
 
@@ -275,7 +295,7 @@ header h1 {
 .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #86868b;
+    color: var(--text-secondary);
 }
 
 .empty-state p {

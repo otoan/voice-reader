@@ -7,12 +7,38 @@ let dictionary = {};
 let currentUtterance = null;
 let isPaused = false;
 let currentArticleId = null;
+let selectedLanguage = 'ja'; // デフォルトは日本語
 
 // スプレッドシートのURL
 const DICTIONARY_URL = 'https://docs.google.com/spreadsheets/d/1uDybkx1ZhTGUaqBA9K7VZsSiPuSVAb8t-E5WaUKUHyM/export?format=csv&gid=1244626711';
 
+// ダークモード切り替え
+function toggleDarkMode() {
+    const html = document.documentElement;
+    const currentTheme = html.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    const button = document.getElementById('darkModeToggle');
+    
+    html.setAttribute('data-theme', newTheme);
+    button.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+    
+    localStorage.setItem('theme', newTheme);
+}
+
+// テーマを読み込み
+function loadTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    const button = document.getElementById('darkModeToggle');
+    
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    if (button) {
+        button.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+    }
+}
+
 // ページ読み込み時
 window.addEventListener('load', () => {
+    loadTheme();
     loadArticles();
     renderArticles();
     loadSettings();
@@ -162,15 +188,29 @@ function cleanTextForSpeech(text) {
 // 音声リストを読み込み
 function populateVoiceList() {
     voices = synth.getVoices();
+    updateVoiceSelect();
+}
+
+// 音声セレクトボックスを更新
+function updateVoiceSelect() {
     const select = document.getElementById('voiceSelect');
     if (!select) return;
     
-    const japaneseVoices = voices.filter(voice => voice.lang.includes('ja'));
+    const langFilter = selectedLanguage;
+    let filteredVoices = voices;
+    
+    if (langFilter === 'ja') {
+        filteredVoices = voices.filter(voice => voice.lang.includes('ja'));
+    } else if (langFilter === 'en') {
+        filteredVoices = voices.filter(voice => voice.lang.includes('en'));
+    } else if (langFilter === 'fr') {
+        filteredVoices = voices.filter(voice => voice.lang.includes('fr'));
+    }
     
     select.innerHTML = '<option value="">-- デフォルト音声 --</option>';
-    japaneseVoices.forEach((voice, i) => {
+    filteredVoices.forEach((voice, i) => {
         const opt = document.createElement('option');
-        opt.value = i;
+        opt.value = voices.indexOf(voice); // 全体リストのインデックスを保存
         opt.textContent = `${voice.name} (${voice.lang})`;
         select.appendChild(opt);
     });
@@ -184,6 +224,13 @@ function populateVoiceList() {
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
+
+// 言語選択の変更
+document.getElementById('languageSelect').addEventListener('change', (e) => {
+    selectedLanguage = e.target.value;
+    updateVoiceSelect();
+    localStorage.setItem('selectedLanguage', selectedLanguage);
+});
 
 // 速度変更
 document.getElementById('speedRange').addEventListener('input', (e) => {
@@ -411,8 +458,7 @@ function playArticle(id) {
     
     const select = document.getElementById('voiceSelect');
     if (select.value !== "") {
-        const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
-        currentUtterance.voice = japaneseVoices[select.value];
+        currentUtterance.voice = voices[select.value]; // 全体リストから直接取得
         console.log('選択された音声:', currentUtterance.voice);
     }
     
@@ -442,6 +488,16 @@ function playArticle(id) {
     };
     
     console.log('🎤 speak()を呼び出します...');
+    
+    // 言語に応じてlangを設定
+    if (selectedLanguage === 'en') {
+        currentUtterance.lang = 'en-US';
+    } else if (selectedLanguage === 'fr') {
+        currentUtterance.lang = 'fr-FR';
+    } else if (selectedLanguage === 'ja') {
+        currentUtterance.lang = 'ja-JP';
+    }
+    
     synth.speak(currentUtterance);
     console.log('speechSynthesis.speaking:', synth.speaking);
     console.log('speechSynthesis.pending:', synth.pending);
@@ -514,5 +570,12 @@ function loadSettings() {
     const savedVoiceIndex = localStorage.getItem('voiceIndex');
     if (savedVoiceIndex) {
         document.getElementById('voiceSelect').value = savedVoiceIndex;
+    }
+    
+    const savedLanguage = localStorage.getItem('selectedLanguage');
+    if (savedLanguage) {
+        selectedLanguage = savedLanguage;
+        document.getElementById('languageSelect').value = savedLanguage;
+        updateVoiceSelect();
     }
 }

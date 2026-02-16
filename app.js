@@ -100,7 +100,7 @@ function applyDictionary(text) {
     return result;
 }
 
-// テキストをクリーニング（強化版）
+// テキストをクリーニング（強化版）+ 間を追加
 function cleanTextForSpeech(text) {
     let cleaned = text;
     
@@ -121,8 +121,9 @@ function cleanTextForSpeech(text) {
     // URL全般を削除
     cleaned = cleaned.replace(/https?:\/\/[^\s]+/g, '');
     
-    // Markdown見出し記号を削除
-    cleaned = cleaned.replace(/^#+\s*/gm, '');
+    // Markdown見出し記号を削除（ただし、後で間を入れるためマーカーを残す）
+    cleaned = cleaned.replace(/^#{1,2}\s+(.+)$/gm, '【見出し大】$1【見出し大終】');
+    cleaned = cleaned.replace(/^#{3,6}\s+(.+)$/gm, '【見出し小】$1【見出し小終】');
     
     // 太字・斜体記号を削除
     cleaned = cleaned.replace(/\*\*([^\*]+)\*\*/g, '$1');
@@ -135,12 +136,24 @@ function cleanTextForSpeech(text) {
     // 引用記号を削除
     cleaned = cleaned.replace(/^>\s*/gm, '');
     
-    // 水平線を削除
-    cleaned = cleaned.replace(/^---+$/gm, '');
-    cleaned = cleaned.replace(/^\*\*\*+$/gm, '');
+    // 水平線を削除（ただし間を入れる）
+    cleaned = cleaned.replace(/^---+$/gm, '【段落区切り】');
+    cleaned = cleaned.replace(/^\*\*\*+$/gm, '【段落区切り】');
     
-    // 連続する空白・改行を整理
-    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    // 連続する空白行（2行以上の改行）に間を入れる
+    cleaned = cleaned.replace(/\n\n+/g, '【段落区切り】');
+    
+    // 間を入れる処理（SSMLのpauseタグは使えないので、句点と空白で代用）
+    cleaned = cleaned.replace(/【見出し大】/g, '。 。 '); // 大見出しの前に長めの間
+    cleaned = cleaned.replace(/【見出し大終】/g, '。 '); // 大見出しの後に間
+    cleaned = cleaned.replace(/【見出し小】/g, '。 '); // 小見出しの前に間
+    cleaned = cleaned.replace(/【見出し小終】/g, '。 '); // 小見出しの後に間
+    cleaned = cleaned.replace(/【段落区切り】/g, '。 '); // 段落の間
+    
+    // 連続する句点を整理
+    cleaned = cleaned.replace(/。{3,}/g, '。 。 ');
+    
+    // 連続する空白を整理
     cleaned = cleaned.replace(/\s{2,}/g, ' ');
     
     return cleaned.trim();
@@ -353,7 +366,13 @@ function escapeHtml(text) {
 // 記事を再生
 function playArticle(id) {
     const article = articles.find(a => a.id === id);
-    if (!article) return;
+    if (!article) {
+        console.error('記事が見つかりません:', id);
+        return;
+    }
+    
+    console.log('再生開始:', article.title);
+    console.log('元の文字数:', article.content.length);
     
     synth.cancel();
     currentArticleId = id;
@@ -372,25 +391,40 @@ function playArticle(id) {
     textToSpeak = cleanTextForSpeech(textToSpeak);
     textToSpeak = applyDictionary(textToSpeak);
     
+    console.log('クリーニング後の文字数:', textToSpeak.length);
+    console.log('最初の100文字:', textToSpeak.substring(0, 100));
+    
+    if (!textToSpeak || textToSpeak.length === 0) {
+        alert('読み上げるテキストがありません。記事の取得に失敗している可能性があります。');
+        return;
+    }
+    
     currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
     currentUtterance.lang = 'ja-JP';
     currentUtterance.rate = speechRate;
+    
+    console.log('音声設定:', {
+        lang: currentUtterance.lang,
+        rate: currentUtterance.rate,
+        voice: currentUtterance.voice
+    });
     
     const select = document.getElementById('voiceSelect');
     if (select.value !== "") {
         const japaneseVoices = voices.filter(v => v.lang.includes('ja'));
         currentUtterance.voice = japaneseVoices[select.value];
+        console.log('選択された音声:', currentUtterance.voice);
     }
     
     currentUtterance.onstart = () => {
-        console.log('読み上げ開始');
+        console.log('✅ 読み上げ開始成功');
         const status = document.getElementById('status');
         if (status) status.textContent = "🔊 読み上げ中...";
         renderArticles();
     };
     
     currentUtterance.onend = () => {
-        console.log('読み上げ完了');
+        console.log('✅ 読み上げ完了');
         const status = document.getElementById('status');
         if (status) status.textContent = "";
         currentArticleId = null;
@@ -398,15 +432,30 @@ function playArticle(id) {
     };
     
     currentUtterance.onerror = (e) => {
-        console.error('読み上げエラー:', e);
+        console.error('❌ 読み上げエラー:', e);
+        console.error('エラーの種類:', e.error);
+        console.error('エラー時の文字位置:', e.charIndex);
         const status = document.getElementById('status');
-        if (status) status.textContent = "❌ 読み上げエラー";
+        if (status) status.textContent = `❌ 読み上げエラー: ${e.error}`;
         currentArticleId = null;
         renderArticles();
     };
     
+    console.log('🎤 speak()を呼び出します...');
     synth.speak(currentUtterance);
+    console.log('speechSynthesis.speaking:', synth.speaking);
+    console.log('speechSynthesis.pending:', synth.pending);
     renderArticles();
+    
+    // タイムアウトチェック（5秒経っても開始しない場合）
+    setTimeout(() => {
+        if (!synth.speaking && currentArticleId === id) {
+            console.error('⚠️ 5秒経っても読み上げが開始されません');
+            alert('読み上げが開始されませんでした。\n\n対処法:\n1. 音声を「デフォルト音声」に変更\n2. ブラウザを再読み込み(F5)\n3. 別のブラウザで試す');
+            currentArticleId = null;
+            renderArticles();
+        }
+    }, 5000);
 }
 
 // 一時停止/再開

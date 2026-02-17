@@ -410,7 +410,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// 記事を再生
+// 記事を再生（分割対応）
 function playArticle(id) {
     const article = articles.find(a => a.id === id);
     if (!article) {
@@ -425,16 +425,9 @@ function playArticle(id) {
     currentArticleId = id;
     isPaused = false;
     
-    const maxLength = 32000;
     let textToSpeak = article.content;
     
-    if (textToSpeak.length > maxLength) {
-        if (!confirm(`この記事は${textToSpeak.length.toLocaleString()}文字あります。最初の${maxLength.toLocaleString()}文字のみ読み上げますか？`)) {
-            return;
-        }
-        textToSpeak = textToSpeak.substring(0, maxLength);
-    }
-    
+    // テキストをクリーニング
     textToSpeak = cleanTextForSpeech(textToSpeak);
     textToSpeak = applyDictionary(textToSpeak);
     
@@ -446,48 +439,75 @@ function playArticle(id) {
         return;
     }
     
-    currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
-    currentUtterance.lang = 'ja-JP';
-    currentUtterance.rate = speechRate;
+    // 文字数制限を考慮して分割
+    const maxLength = 30000; // 少し余裕を持たせる
+    const chunks = splitTextIntoChunks(textToSpeak, maxLength);
     
-    console.log('音声設定:', {
-        lang: currentUtterance.lang,
-        rate: currentUtterance.rate,
-        voice: currentUtterance.voice
-    });
+    console.log(`テキストを${chunks.length}個に分割しました`);
     
-    const select = document.getElementById('voiceSelect');
-    if (select.value !== "") {
-        currentUtterance.voice = voices[select.value]; // 全体リストから直接取得
-        console.log('選択された音声:', currentUtterance.voice);
+    if (chunks.length > 1) {
+        const status = document.getElementById('status');
+        if (status) status.textContent = `📖 ${chunks.length}個のパートに分割して再生します`;
     }
     
-    currentUtterance.onstart = () => {
-        console.log('✅ 読み上げ開始成功');
-        const status = document.getElementById('status');
-        if (status) status.textContent = "🔊 読み上げ中...";
-        renderArticles();
-    };
+    // 最初のチャンクから再生開始
+    playTextChunks(chunks, 0);
+    renderArticles();
+}
+
+// テキストを適切なサイズに分割
+function splitTextIntoChunks(text, maxLength) {
+    if (text.length <= maxLength) {
+        return [text];
+    }
     
-    currentUtterance.onend = () => {
-        console.log('✅ 読み上げ完了');
+    const chunks = [];
+    let remainingText = text;
+    
+    while (remainingText.length > 0) {
+        if (remainingText.length <= maxLength) {
+            chunks.push(remainingText);
+            break;
+        }
+        
+        // 句点で区切る位置を探す
+        let splitPos = maxLength;
+        const lastPeriod = remainingText.lastIndexOf('。', maxLength);
+        const lastNewline = remainingText.lastIndexOf('\n', maxLength);
+        const lastSpace = remainingText.lastIndexOf(' ', maxLength);
+        
+        // 句点、改行、スペースのうち最も近い位置で分割
+        splitPos = Math.max(lastPeriod, lastNewline, lastSpace);
+        
+        // 適切な分割位置が見つからない場合はmaxLengthで強制分割
+        if (splitPos <= 0 || splitPos < maxLength * 0.8) {
+            splitPos = maxLength;
+        } else {
+            splitPos += 1; // 句点も含める
+        }
+        
+        chunks.push(remainingText.substring(0, splitPos));
+        remainingText = remainingText.substring(splitPos).trim();
+    }
+    
+    return chunks;
+}
+
+// チャンクを順番に再生
+function playTextChunks(chunks, index) {
+    if (index >= chunks.length) {
+        console.log('✅ 全てのパートの再生完了');
         const status = document.getElementById('status');
         if (status) status.textContent = "";
         currentArticleId = null;
         renderArticles();
-    };
+        return;
+    }
     
-    currentUtterance.onerror = (e) => {
-        console.error('❌ 読み上げエラー:', e);
-        console.error('エラーの種類:', e.error);
-        console.error('エラー時の文字位置:', e.charIndex);
-        const status = document.getElementById('status');
-        if (status) status.textContent = `❌ 読み上げエラー: ${e.error}`;
-        currentArticleId = null;
-        renderArticles();
-    };
+    console.log(`パート ${index + 1}/${chunks.length} を再生中`);
     
-    console.log('🎤 speak()を呼び出します...');
+    currentUtterance = new SpeechSynthesisUtterance(chunks[index]);
+    currentUtterance.rate = speechRate;
     
     // 言語に応じてlangを設定
     if (selectedLanguage === 'en') {
@@ -498,20 +518,56 @@ function playArticle(id) {
         currentUtterance.lang = 'ja-JP';
     }
     
-    synth.speak(currentUtterance);
-    console.log('speechSynthesis.speaking:', synth.speaking);
-    console.log('speechSynthesis.pending:', synth.pending);
-    renderArticles();
+    const select = document.getElementById('voiceSelect');
+    if (select.value !== "") {
+        currentUtterance.voice = voices[select.value];
+        console.log('選択された音声:', currentUtterance.voice);
+    }
     
-    // タイムアウトチェック（5秒経っても開始しない場合）
-    setTimeout(() => {
-        if (!synth.speaking && currentArticleId === id) {
-            console.error('⚠️ 5秒経っても読み上げが開始されません');
-            alert('読み上げが開始されませんでした。\n\n対処法:\n1. 音声を「デフォルト音声」に変更\n2. ブラウザを再読み込み(F5)\n3. 別のブラウザで試す');
-            currentArticleId = null;
-            renderArticles();
+    currentUtterance.onstart = () => {
+        console.log(`✅ パート ${index + 1}/${chunks.length} 再生開始`);
+        const status = document.getElementById('status');
+        if (status) {
+            if (chunks.length > 1) {
+                status.textContent = `🔊 読み上げ中... (${index + 1}/${chunks.length})`;
+            } else {
+                status.textContent = "🔊 読み上げ中...";
+            }
         }
-    }, 5000);
+        renderArticles();
+    };
+    
+    currentUtterance.onend = () => {
+        console.log(`✅ パート ${index + 1}/${chunks.length} 完了`);
+        
+        // 次のチャンクを再生（少し間を空ける）
+        setTimeout(() => {
+            if (currentArticleId !== null) { // 停止されていない場合のみ続行
+                playTextChunks(chunks, index + 1);
+            }
+        }, 300); // 300ms の間
+    };
+    
+    currentUtterance.onerror = (e) => {
+        console.error(`❌ パート ${index + 1}/${chunks.length} でエラー:`, e);
+        console.error('エラーの種類:', e.error);
+        
+        // エラーが発生しても次のチャンクを試す
+        if (e.error === 'interrupted' || e.error === 'canceled') {
+            console.log('中断されました');
+            return;
+        }
+        
+        // その他のエラーの場合は次へ
+        setTimeout(() => {
+            if (currentArticleId !== null) {
+                playTextChunks(chunks, index + 1);
+            }
+        }, 500);
+    };
+    
+    console.log('🎤 speak()を呼び出します...');
+    synth.speak(currentUtterance);
 }
 
 // 一時停止/再開
@@ -519,9 +575,11 @@ function pauseArticle(id) {
     if (isPaused) {
         synth.resume();
         isPaused = false;
+        console.log('再開しました');
     } else {
         synth.pause();
         isPaused = true;
+        console.log('一時停止しました');
     }
     renderArticles();
 }
@@ -530,8 +588,10 @@ function stopSpeech() {
     synth.cancel();
     currentArticleId = null;
     isPaused = false;
+    currentUtterance = null;
     const status = document.getElementById('status');
     if (status) status.textContent = "";
+    console.log('停止しました');
     renderArticles();
 }
 
